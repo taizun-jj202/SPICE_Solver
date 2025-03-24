@@ -1,0 +1,9 @@
+
+
+# Ignore Project files
+Accessing SPICE on Chipshub.pdf
+EE598_CEN598-ASU-VLSI-Design-Automation-MiniProject2.pdf
+Phase1 Description.pdf
+
+#Ignore VS Code files
+.DS_Store
