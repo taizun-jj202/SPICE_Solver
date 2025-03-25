@@ -7,3 +7,6 @@ Phase1 Description.pdf
 
 #Ignore VS Code files
 .DS_Store
+
+#Python Venv
+EEE598/
