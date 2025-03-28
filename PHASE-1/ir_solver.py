@@ -22,6 +22,14 @@ n1_m1_4800_0
 import re 
 import numpy as np
 import scipy as sp
+from scipy.sparse.linalg import spsolve
+
+import psutil
+import os
+
+# Get process info
+process = psutil.Process(os.getpid())
+
 
 def parse_node_name(node_str):
     """
@@ -79,8 +87,13 @@ def parse_netlist(file_path):
 
     """
 
-    nodes_set = set()  # Track unique nodes
+    nodes_set = set()  # Track all unique nodes
+    R_set = set()  # Track all unique resistances
+    I_set = set()  # Track all unique currents
+    V_set = set()  # Track all unique voltages
+
     node_metadata = {}  # Store node properties
+    
     R = []  # (node1, node2, resistance)
     I = []  # (node, current)
     V = []  # (node, voltage)
@@ -100,6 +113,7 @@ def parse_netlist(file_path):
                         parsed = parse_node_name(node)
                         if parsed:
                             node_metadata[node] = parsed
+                    R_set.add(node)
                     nodes_set.add(node)
 
             elif element.startswith("I"):  # Current Source
@@ -110,7 +124,9 @@ def parse_netlist(file_path):
                     parsed = parse_node_name(node)
                     if parsed:
                         node_metadata[node] = parsed
+                I_set.add(node)
                 nodes_set.add(node)
+
 
             elif element.startswith("V"):  # Voltage Source
                 _, n1, n2, voltage = tokens
@@ -120,9 +136,10 @@ def parse_netlist(file_path):
                     parsed = parse_node_name(node)
                     if parsed:
                         node_metadata[node] = parsed
+                V_set.add(node)
                 nodes_set.add(node)
 
-    return R, I, V, nodes_set, node_metadata
+    return R, I, V, nodes_set, node_metadata, R_set, I_set, V_set
 
 
 def construct_sparse_G(resistors_list:list, node_index:dict, N:int):
@@ -168,22 +185,67 @@ def construct_sparse_G(resistors_list:list, node_index:dict, N:int):
     return G.tocsr()  
 
 
-# SPNETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_circuit1.sp'
-# SPNETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_citcuit2.sp'
-SPNETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase3.sp'
+def solve_voltage(G, I):
+    """
+    Solves the linear system G * V = I to compute the voltage vector V.
+
+    PARAMETERS
+    ----------
+    G : scipy.sparse.csr_matrix
+        Sparse conductance matrix in CSR format.
+    I : numpy.ndarray
+        Current vector.
+
+    RETURNS
+    -------
+    V : numpy.ndarray
+        Voltage vector.
+    """
+    
+    return spsolve(G, I)
+
+
+SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_circuit1.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_citcuit2.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase1.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase2.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase3.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase4.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase5.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase6.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase11.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase12.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase17.sp'
+# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase18.sp'
 
 
 def main():
-    file_path = SPNETLIST  # Change to your file path
-    R, I, V, nodes_set, node_metadata = parse_netlist(file_path)
+    file_path = SPICE_NETLIST  # Change to your file path
+    R, I, V, nodes_set, node_metadata, R_SET, I_SET, V_SET = parse_netlist(file_path)
 
-    # Remove GND nodes, as their +/-g are 0, hence unncecssary calculations.
+    # Remove GND nodes, as their +/-g are 0, hence unnecessary calculations.
     nodes = sorted(nodes_set - {"0"})
     node_index = {node: i for i, node in enumerate(nodes)}
     N = len(nodes)
+    # node_index = {node: i for i, node in enumerate(nodes_set)}
+    # N = len(nodes_set)
     G = construct_sparse_G(R, node_index, N)
 
-    print("\nSparse G matrix in CSR format :\n", G)
+    print(G)
+    I_vector = np.zeros(N)
+    for n1, n2, current in I:
+        if n1 != "0":
+            I_vector[node_index[n1]] += current
+        if n2 != "0":
+            I_vector[node_index[n2]] -= current
+
+    # Solve for the voltage vector V
+    V_vector = solve_voltage(G, I_vector)
+
+    print("Sparse G matrix in CSR format:\n", G)
+    print("\nCurrent vector I:", I_vector)
+    print("Voltage vector V:", V_vector)
+    print(f"Memory usage: {process.memory_info().rss / 1024 ** 2:.2f} MB\n")
 
 if __name__ == "__main__":
     main()
