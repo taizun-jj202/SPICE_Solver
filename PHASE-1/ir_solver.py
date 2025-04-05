@@ -1,255 +1,226 @@
 """
-Mini-Project 2 Phase 1
 
-This file reads .sp file and fills in objects with correct data.
+Mini-Project-2 : IR Drop Solver, Phase-1 
 
-Each line in sp file is written in following format from which data 
-must be parsed correctly.
-
-<electrical_component> <node1> <node2> <value>
-R1 n1 n2 1
-
-However, each node might be in the format below :
-<netname>_<layer-idx>_<x-coordinate>_<y-coordinate> 
-n1_m1_4800_0 
+Static IR Drop Solver . 
+Uses GV=J method to solve for voltage at each node in the circuit.
 
 
-@author Taizun J
-@date 24 Mar 10:39:21 2025
+@author: Taizun J, jafri.taizun.s@gmail.com
+@date  : Apr 5 11:16:29 2025
+
 """
 
-# Global imports
-import re 
-import numpy as np
+import argparse
+from pprint import *
+import pandas as pd
 import scipy as sp
 from scipy.sparse.linalg import spsolve
-
-import psutil
 import os
+import time
 
-# Get process info
-process = psutil.Process(os.getpid())
+def parse_lines(FILE):
+    print("Parsing SPICE netlist into datastructure...")
+    with open(FILE, 'r') as f:
 
+        file_content = []
+        for line in f :
+            components = line.split()
+            if len(components) < 4 :
+                continue
 
-def parse_node_name(node_str):
-    """
-    Extracts netname, layer index, x, y coordinates from a node string.
-    
-    Each node is defined as follows : 
-        <netname>_<layer-idx>_<x-coordinate>_<y-coordinate>
+            electrical_component = components[0]
+            node1 = components[1]
+            node2 = components[2]
+            component_value = components[3]
+
+            # Store every component as a dict in a list.
+            file_content.append({
+                'electrical_component' : electrical_component,
+                'node1' : node1,
+                'node2' : node2,
+                'value' : component_value
+            })
+
+        file_contents = pd.DataFrame(file_content)
         
-        E.g : n1_m1_9600_196800
+        print("Parsed file successfully...")
+        return file_contents
         
-        Here, n1 = node name
-              m1 = metal layer
-            9600 = x-coordinate
-            196800 = y-coordinate
+
+def get_unique_nodes(file_contents):
     """
-    
-    parts = node_str.split('_')
-    if len(parts) == 4:
-        netname, layer_idx, x, y = parts
-        return netname, layer_idx, float(x), float(y)
-    
-    return node_str, None, None, None
-
-
-def parse_netlist(file_path):
-
+    Get unique nodes from the parsed file contents.
+    Returns sorted set of unique nodes excluding the ground node '0'.
     """
+    unique_nodes = file_contents[['node1', 'node2']].values.flatten()
+    unique_nodes = set(unique_nodes) 
+    unique_nodes.discard('0') # Discard ground node
+    unique_nodes = sorted(unique_nodes) 
+    return unique_nodes
 
-    Reads .sp SPICE netlist and extracts elements.
-    Stores each element in their corresponding lists.
 
-    Returns :
-    --------- 
+def construct_G_and_J_matrix(
+        file_contents
+):
+    print("Constructing G and J matrices from parsed file contents...")
+    unique_nodes = get_unique_nodes(file_contents)
+    node_indexes = {node: idx for idx, node in enumerate(unique_nodes)}
+    num_nodes = len(unique_nodes)
 
-    R: 
-        Resistive node list.
-        A list of all nodes that have resistive component
-    I: 
-        Current node list.
-        A list of all nodes that have current sources
-    V:
-        Voltage source list.
-        A list of all nodes that have voltage sources
-    
-    nodes_set :
-        Set of all nodes.
-        Set is used to store all nodes so no duplicates are stored.
-    
-    node_metdata :
-        Python dict containing,
-            1. net name
-            2. metal layer on which the node is.
-            3. X-Coordinate of node.
-            4. Y-Coordinate of node.   
+    # voltage_sources = file_contents[file_contents['electrical_component'].str.startswith('V')]
+    # # print(voltage_sources)
+    # num_voltage_sources = len(voltage_sources)
+    # extra_V_row_index = 1  
 
-    """
+    N = num_nodes 
 
-    nodes_set = set()  # Track all unique nodes
-    R_set = set()  # Track all unique resistances
-    I_set = set()  # Track all unique currents
-    V_set = set()  # Track all unique voltages
+    # Sparse G matrix 
+    G = sp.sparse.lil_matrix((N, N))
+    # Sparse J vector
+    J = sp.sparse.lil_matrix((N, 1))
 
-    node_metadata = {}  # Store node properties
-    
-    R = []  # (node1, node2, resistance)
-    I = []  # (node, current)
-    V = []  # (node, voltage)
+    for index, row in file_contents.iterrows():
+        electrical_component = row['electrical_component']
+        node1 = row['node1']
+        node2 = row['node2']
+        value = row['value']
 
-    with open(file_path, "r") as file:
-        for line in file:
-           
-            tokens = line.split()
-            element = tokens[0]
+        if electrical_component.startswith('R'):
+            g = 1 / float(value)  # Conductance for resistors
 
-            if element.startswith("R"):  # Resistor
-                _, n1, n2, resistance = tokens
-                R.append((n1, n2, float(resistance)))
+            if node1 != '0' and node2 != '0':
                 
-                for node in (n1, n2):
-                    if node not in node_metadata:
-                        parsed = parse_node_name(node)
-                        if parsed:
-                            node_metadata[node] = parsed
-                    R_set.add(node)
-                    nodes_set.add(node)
+                i = node_indexes[node1]
+                j = node_indexes[node2]
 
-            elif element.startswith("I"):  # Current Source
-                _, n1, n2, current = tokens
-                I.append((n1, n2, float(current)))
-                
-                if node not in node_metadata:
-                    parsed = parse_node_name(node)
-                    if parsed:
-                        node_metadata[node] = parsed
-                I_set.add(node)
-                nodes_set.add(node)
+                G[i, i] += g
+                G[j, j] += g
+                G[i, j] -= g
+                G[j, i] -= g
 
+            # Only node1 is not 0, node2 is zero, i.e a conenction to GND
+            elif node1 != '0': 
+                i = node_indexes[node1]
+                G[i, i] += g  # Add conductance to the node connected to ground
+            
+            # Node2 is not '0' and node1 is '0', i.e a connection from GND to a node
+            elif node2 != '0':
+                j = node_indexes[node2]
+                G[j, j] += g
 
-            elif element.startswith("V"):  # Voltage Source
-                _, n1, n2, voltage = tokens
-                V.append((n1, n2, float(voltage)))
+        # Update J-vector for every current element.
+        elif electrical_component.startswith('I'):
+            
+            if node1 != '0':
+                i = node_indexes[node1]
+                J[i,0] -= float(value)
+            
+            if node2 != '0':
+                j = node_indexes[node2]
+                J[j,0] += float(value)
 
-                if node not in node_metadata:
-                    parsed = parse_node_name(node)
-                    if parsed:
-                        node_metadata[node] = parsed
-                V_set.add(node)
-                nodes_set.add(node)
+        # # Updating G matrix for voltage : 
+        elif electrical_component.startswith('V'):
 
-    return R, I, V, nodes_set, node_metadata, R_set, I_set, V_set
+            # Voltage source is attached to node1
+            if node1 != '0' :             
+                i = node_indexes[node1]  # Get the index of node1
+                G[i, :] = 0  
+                G[i, i] = 1
+                J[i,0] = value
 
-
-def construct_sparse_G(resistors_list:list, node_index:dict, N:int):
-    """Builds the sparse G matrix 
+            elif node2 != '0':
+                # Voltage source is attached to node2
+                j = node_indexes[node2]  
+                G[j, :] = 0  
+                G[j, j] = 1
+                J[j,0] = -value
     
-    For every element at position (i,i), conductance is +g. 
-    For every element at position (i,j) or (j,i), conductance is -g.
-    For every other element, the conductance is not updated. i.e conductance is 0.
-
-    PARAMETERS
-    ----------
-    resistors_list :
-        List of elements with voltage drop.
-        In our case, this is only Resistive elements.
-    node_index :
-        Dict containing index of node.
-        Any element in this dict is stored in a set 
-        Accessing those elements is O(1). Hence why this is 
-            implemented as a dict/set combination.
-    N : 
-        Size of the sparse matrix is N x N.
-        
-
-    """
-    G = sp.sparse.lil_matrix((N, N))  
-
-    for n1, n2, R in resistors_list:
-        
-        g = 1 / R
-        
-        if n1 != 0:  
-            i = node_index[n1]
-            G[i, i] += g  
-        
-        if n2 != 0:  
-            j = node_index[n2]
-            G[j, j] += g  
-        
-        if n1 != 0 and n2 != 0:  
-            G[i, j] -= g  
-            G[j, i] -= g  
-
-    return G.tocsr()  
-
-
-def solve_voltage(G, I):
-    """
-    Solves the linear system G * V = I to compute the voltage vector V.
-
-    PARAMETERS
-    ----------
-    G : scipy.sparse.csr_matrix
-        Sparse conductance matrix in CSR format.
-    I : numpy.ndarray
-        Current vector.
-
-    RETURNS
-    -------
-    V : numpy.ndarray
-        Voltage vector.
-    """
     
-    return spsolve(G, I)
+    G = G.tocsr()
+    J = J.tocsr()
+    print("Constructed G and J matrices and converted them into CSR format...")
+    return G, J
 
 
-SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_circuit1.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_citcuit2.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase1.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase2.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase3.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase4.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase5.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase6.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase11.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase12.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase17.sp'
-# SPICE_NETLIST = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase18.sp'
+def solve_G_J(
+        G,
+        J
+):
+    """
+    Solve the linear system Gx = J to find x.
+    """
+
+    print("Solving GV=J equation...")
+    V = spsolve(G, J)
+    return V
 
 
-def main():
-    file_path = SPICE_NETLIST  # Change to your file path
-    R, I, V, nodes_set, node_metadata, R_SET, I_SET, V_SET = parse_netlist(file_path)
-
-    # Remove GND nodes, as their +/-g are 0, hence unnecessary calculations.
-    nodes = sorted(nodes_set - {"0"})
-    node_index = {node: i for i, node in enumerate(nodes)}
-    N = len(nodes)
-    # node_index = {node: i for i, node in enumerate(nodes_set)}
-    # N = len(nodes_set)
-    G = construct_sparse_G(R, node_index, N)
-
-    print(G)
-    I_vector = np.zeros(N)
-    for n1, n2, current in I:
-        if n1 != "0":
-            I_vector[node_index[n1]] += current
-        if n2 != "0":
-            I_vector[node_index[n2]] -= current
-
-    # Solve for the voltage vector V
-    V_vector = solve_voltage(G, I_vector)
-
-    print("Sparse G matrix in CSR format:\n", G)
-    print("\nCurrent vector I:", I_vector)
-    print("Voltage vector V:", V_vector)
-    print(f"Memory usage: {process.memory_info().rss / 1024 ** 2:.2f} MB\n")
-
-if __name__ == "__main__":
-    main()
+def format_to_output_file(
+        OUTPUT_FILE ,
+        unique_nodes,
+        solved_voltage_vector
+        ):
+    
+    print("Saving to output file...")
+    with open(OUTPUT_FILE, 'w') as f:
+        for unique_node, votlage in zip(unique_nodes, solved_voltage_vector):
+            f.write(f"{unique_node} {votlage:.6f}\n")
+    
 
 
+def run_solver(
+        INPUT_FILE,
+        OUTPUT_FILE
+):
+    
+    print(f"\nProcessing file: {os.path.basename(INPUT_FILE)}\n")
 
 
+    file_contents = parse_lines(INPUT_FILE)
+    G, J = construct_G_and_J_matrix( file_contents )
+    V = solve_G_J(G,J)
+    format_to_output_file(
+        OUTPUT_FILE, 
+        unique_nodes=get_unique_nodes(file_contents),
+        solved_voltage_vector=V
+    )
+    print(f'\nGenerated output file: {os.path.basename(OUTPUT_FILE)}\n')
+
+
+
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='IR Drop Solver')
+    parser.add_argument(
+        '--input_file', 
+        required=True, 
+        help='Input SPICE netlist file'
+    )
+    parser.add_argument(
+        '--output_file', 
+        required=True, 
+        help='Output voltage file'
+    )
+    args = parser.parse_args()
+
+    INPUT_FILE = args.input_file 
+    OUTPUT_FILE = args.output_file
+    
+    # INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_circuit1.sp'
+    # # INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/simple_citcuit2.sp'
+    # # INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/testcase1.sp'
+    # # INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/test.sp'
+    
+    # OUTPUT_FILE = 'output.voltage'
+
+    start = time.time()
+    run_solver(
+        INPUT_FILE=INPUT_FILE,
+        OUTPUT_FILE=OUTPUT_FILE
+    )
+    end = time.time()
+    print(f"\n Solution in {(end - start):.2f} seconds ")
