@@ -20,7 +20,7 @@ import os
 import time
 
 def parse_lines(FILE):
-    print("Parsing SPICE netlist into datastructure...")
+    # print("Parsing SPICE netlist into datastructure...")
     with open(FILE, 'r') as f:
 
         file_content = []
@@ -44,7 +44,7 @@ def parse_lines(FILE):
 
         file_contents = pd.DataFrame(file_content)
         
-        print("Parsed file successfully...")
+        # print("Parsed file successfully...")
         return file_contents
         
 
@@ -63,7 +63,7 @@ def get_unique_nodes(file_contents):
 def construct_G_and_J_matrix(
         file_contents
 ):
-    print("Constructing G and J matrices from parsed file contents...")
+    # print("Constructing G and J matrices from parsed file contents...")
     unique_nodes = get_unique_nodes(file_contents)
     node_indexes = {node: idx for idx, node in enumerate(unique_nodes)}
     num_nodes = len(unique_nodes)
@@ -140,7 +140,7 @@ def construct_G_and_J_matrix(
     
     G = G.tocsr()
     J = J.tocsr()
-    print("Constructed G and J matrices and converted them into CSR format...")
+    # print("Constructed G and J matrices and converted them into CSR format...")
     return G, J
 
 
@@ -152,7 +152,7 @@ def solve_G_J(
     Solve the linear system Gx = J to find x.
     """
 
-    print("Solving GV=J equation...")
+    # print("Solving GV=J equation...")
     V = spsolve(G, J)
     return V
 
@@ -163,7 +163,7 @@ def format_to_output_file(
         solved_voltage_vector
         ):
     
-    print("Saving to output file...")
+    # print("Saving to output file...")
     with open(OUTPUT_FILE, 'w') as f:
         for unique_node, votlage in zip(unique_nodes, solved_voltage_vector):
             f.write(f"{unique_node} {votlage:.6f}\n")
@@ -175,7 +175,7 @@ def run_solver(
         OUTPUT_FILE
 ):
     
-    print(f"\nProcessing file: {os.path.basename(INPUT_FILE)}\n")
+    # print(f"\nProcessing file: {os.path.basename(INPUT_FILE)}\n")
 
 
     file_contents = parse_lines(INPUT_FILE)
@@ -186,7 +186,8 @@ def run_solver(
         unique_nodes=get_unique_nodes(file_contents),
         solved_voltage_vector=V
     )
-    print(f'\nGenerated output file: {os.path.basename(OUTPUT_FILE)}\n')
+    # print(f'\nGenerated output file: {os.path.basename(OUTPUT_FILE)}\n')
+    print(f' - Generated output file: {os.path.basename(OUTPUT_FILE)}\n')
 
 
 
