@@ -14,6 +14,7 @@ import numpy as np
 
 # Import Solver script
 import ir_solver as ir_solver
+PLOT = 0
 
 # %%
 # Extract each line as pandas dataframe
@@ -107,6 +108,7 @@ def parse_voltage_file(DOT_VOTLAGE_FILE:str):
 
             x_coord = float(node.split('_')[2]) / 2000
             y_coord = float(node.split('_')[3]) / 2000
+            voltage = 1.1 - float(voltage)
             file_content.append({
                 # 'node': node,
                 'x': x_coord,
@@ -117,12 +119,78 @@ def parse_voltage_file(DOT_VOTLAGE_FILE:str):
         voltage_df = pd.DataFrame(file_content)
         return voltage_df
 
+def get_pitch_for_layer( node1, node2 ):
+    """Returns pitch between nodes"""
+
+    _ ,_, x1, y1 = get_node_location(node1)
+    _, _, x2, y2 = get_node_location(node2)
+
+    # Scale by factor of 2000 DBU.
+    x1 = float(x1) 
+    y1 = float(y1) 
+    x2 = float(x2) 
+    y2 = float(y2) 
+
+    pitch = int(abs(x1 - x2) + abs(y1 - y2)) 
+    return pitch
+
+def plot_metal_Dataframe(DATAFRAME, m1_dataframe, m4_dataframe, m7_dataframe, m8_dataframe, m9_dataframe):
+    """Plots m1 to m9 dataframes in separate subplots within the same image."""
+    fig, axes = plt.subplots(3, 2, figsize=(12, 12))  # Create a 3x2 grid of subplots
+    axes = axes.flatten()  # Flatten the axes array for easier indexing
+
+    # Define dataframes and labels for each subplot
+    dataframes = [
+        (m1_dataframe, 'M1', 'blue'),
+        (m4_dataframe, 'M4', 'green'),
+        (m7_dataframe, 'M7', 'red'),
+        (m8_dataframe, 'M8', 'purple'),
+        (m9_dataframe, 'M9', 'orange')
+    ]
+
+    # Plot each dataframe in a separate subplot
+    for i, (df, label, color) in enumerate(dataframes):
+        ax = axes[i]
+        ax.scatter(df['y'], df['x'], c=color, s=5, label=label)
+        ax.set_title(f'{label} Distribution')
+        ax.set_xlabel('Y Coordinate')
+        ax.set_ylabel('X Coordinate')
+        ax.legend()
+        ax.invert_yaxis()  # Invert y-axis if required
+
+    # Hide the last subplot if there are fewer than 6 subplots
+    if len(dataframes) < len(axes):
+        for j in range(len(dataframes), len(axes)):
+            fig.delaxes(axes[j])
+
+    # Adjust layout
+    plt.tight_layout()
+    plt.show()
+
+    # Code in the PDN_plot:
+    m1_dataframe = DATAFRAME[DATAFRAME['node'].str.contains('_m1_')]
+    m4_dataframe = DATAFRAME[DATAFRAME['node'].str.contains('_m4_')]
+    m7_dataframe = DATAFRAME[DATAFRAME['node'].str.contains('_m7_')]
+    m8_dataframe = DATAFRAME[DATAFRAME['node'].str.contains('_m8_')]
+    m9_dataframe = DATAFRAME[DATAFRAME['node'].str.contains('_m9_')]
+    
+    max_x = (DATAFRAME['x'].max() / 100 ) * 100
+    max_y = (DATAFRAME['y'].max() / 100 ) * 100 
+
+    print(f"Max X : {max_x}, Max Y : {max_y}")
+    print(" - Plotting metal layer distribution...")
+    plot_metal_Dataframe(m1_dataframe, m4_dataframe, m7_dataframe, m8_dataframe, m9_dataframe)
+
+
 # %%
 # INPUT and OUTPUT file locations :
 
 INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/SPICE_Netlists/testcase1.sp'
 # INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/SPICE_Netlists/testcase2.sp'
 # INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/benchmarks/SPICE_Netlists/testcase3.sp'
+# INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/training_data/data_point00.sp'
+# INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/training_data/data_point10.sp'
+# INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/training_data/data_point25.sp'
 
 # OUTPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/output.voltage'
 OUTPUT_FILE_WO_EXT = os.path.splitext(os.path.basename(INPUT_FILE))[0]
@@ -165,30 +233,32 @@ def create_current_map(file_dataframe:pd.DataFrame):
     nodes_df = nodes_df.drop(columns=['value']) 
 
     # print(nodes_df.head(10))
+    nodes_df['Current'] = pd.to_numeric(nodes_df['Current'], errors='coerce')
     nodes_df = nodes_df.drop(columns=['node'])[['x', 'y', 'Current']]
-
+    
     current_map_file = OUTPUT_FILE_WO_EXT + ".imap"
     nodes_df.to_csv(current_map_file, index=False)
 
     # print(nodes_df.head(10))
     print(f"Saved current map to file : {current_map_file}")
 
-    print("Plotting current map...")
-    plt.figure(figsize=(8, 6))
-    plt.scatter(nodes_df['x'], 
-                nodes_df['y'], 
-                c=nodes_df['Current'], 
-                cmap='coolwarm', s=5) # Color by current_value
-                # cmap='viridis', s=10) # Color by current_value
-    plt.colorbar(label='Current Value')
-    plt.xlabel('X Coordinate')
-    plt.ylabel('Y Coordinate')
-    plt.title('Current Map')
-    # plt.grid(True)
-    plt.gca().invert_yaxis()
-    plt.show()
+    if PLOT: 
+        print("Plotting current map...")
+        plt.figure(figsize=(8, 6))
+        plt.scatter(nodes_df['y'], 
+                    nodes_df['x'], 
+                    c=nodes_df['Current'], 
+                    # cmap='coolwarm', s=5) # Color by current_value
+                    cmap='viridis', s=5) # Color by current_value
+        plt.colorbar(label='Current Value')
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.title('Current Map')
+        # plt.grid(True)
+        plt.gca().invert_yaxis()
+        plt.show()
 
-# create_current_map(file_content)
+create_current_map(file_content)
 
 # %% 
 
@@ -223,27 +293,27 @@ def distance_to_voltage_source(
     )
 
     effective_voltage_map_file = OUTPUT_FILE_WO_EXT + ".vmap"
-    
     # Dropping the `electrical_component`,`node1` columns.
     file_dataframe = file_dataframe.drop(columns=['electrical_component', 'node1'])
 
     file_dataframe.to_csv(effective_voltage_map_file, index=False)
     print(f"Saved effective distance to voltage source map to file : {effective_voltage_map_file}")
 
-    # print("Plotting voltage map...")
-    # plt.figure(figsize=(8, 6))
-    # plt.scatter(file_dataframe['y'],  
-    #             file_dataframe['x'], 
-    #             c=file_dataframe['Dist_to_Voltage'], 
-    #             cmap='coolwarm', s=5) # Color by current_value
-    #             # cmap='viridis', s=10) # Color by current_value
-    # plt.colorbar(label='Voltage Value')
-    # plt.xlabel('X Coordinate')
-    # plt.ylabel('Y Coordinate')
-    # plt.title('Effective Distance to Voltage Source map')
-    # # plt.grid(True)
-    # plt.gca().invert_yaxis()
-    # plt.show()
+    if PLOT: 
+        print("Plotting voltage map...")
+        plt.figure(figsize=(8, 6))
+        plt.scatter(file_dataframe['y'],  
+                    file_dataframe['x'], 
+                    c=file_dataframe['Dist_to_Voltage'], 
+                    # cmap='coolwarm', s=5) # Color by current_value
+                    cmap='viridis', s=5) # Color by current_value
+        plt.colorbar(label='Voltage Value')
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.title('Effective Distance to Voltage Source map')
+        # plt.grid(True)
+        plt.gca().invert_yaxis()
+        plt.show()
 
 distance_to_voltage_source(file_content)
 
@@ -271,20 +341,120 @@ def IR_drop_map(
 
     DOT_OUT_FILE = OUTPUT_FILE_WO_EXT + ".irdrop"
     dot_voltage_df.to_csv(DOT_OUT_FILE, index=False)
+    print(f"Saved IR Drop distribution to file : {DOT_OUT_FILE}")
 
-    plt.figure(figsize=(8, 6))
-    plt.scatter(dot_voltage_df['y'], 
-                dot_voltage_df['x'], 
-                c=dot_voltage_df['voltage'], 
-                cmap='viridis', s=5)
-                # cmap='coolwarm', s=5) # Color by current_value
-    plt.colorbar(label='Voltage Value')
-    plt.xlabel('X Coordinate')
-    plt.ylabel('Y Coordinate')
-    plt.title('Voltage Map')
-    # plt.grid(True)
-    plt.gca().invert_yaxis()  # Invert y-axis if required
-    plt.show()
-
+    if PLOT : 
+        plt.figure(figsize=(8, 6))
+        plt.scatter(dot_voltage_df['y'], 
+                    dot_voltage_df['x'], 
+                    c=dot_voltage_df['voltage'], 
+                    cmap='viridis', s=5)
+                    # cmap='coolwarm', s=5) # Color by current_value
+        plt.colorbar(label='Voltage Value')
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.title('Voltage Map')
+        # plt.grid(True)
+        plt.gca().invert_yaxis()  # Invert y-axis if required
+        plt.show()
 
 IR_drop_map(INPUT_FILE)
+
+# %% 
+
+
+# Create PDN plot 
+import math
+
+def PDN_plot(DATAFRAME:pd.DataFrame):
+    """Create PDN distribution from .sp file"""
+
+    print("   -----------------------")
+    print(" - Creating PDN distribution plot...")
+
+    DATAFRAME = DATAFRAME.drop(
+                    columns=['value', 'node2', 'electrical_component']
+                ).rename(columns={'node1': 'node'})
+    
+    print(" - Creating X and Y columns...")
+    DATAFRAME[['x', 'y']] = DATAFRAME['node'].apply(lambda n: pd.Series([
+        float(n.split('_')[2]) / 2000,
+        float(n.split('_')[3]) / 2000
+    ]))
+
+    max_x_DF = math.ceil(DATAFRAME['x'].max() / 100 ) * 100
+    max_y_DF = math.ceil(DATAFRAME['y'].max() / 100 ) * 100
+    num_regions_x_axis = int( max_x_DF / 100 )
+    num_regions_y_axis = int( max_y_DF / 100 )
+
+    # print(" - Filtering metal layer...")
+    # m4_dataframe = DATAFRAME[DATAFRAME['node'].str.contains('_m4_')]
+
+    # max_x_m4 = m4_dataframe['x'].max()
+    # max_y_m4 = m4_dataframe['y'].max()
+
+    # print(f"  Max X DF : {max_x_DF}, Max Y DF: {max_y_DF}")
+    # print(f"  Max X: {max_x_m4}, Max Y: {max_y_m4}")
+    # print(f"  Num x regs: {num_regions_x_axis}, Num y regs : {num_regions_y_axis}")
+
+
+    DATAFRAME['pitch'] = np.nan
+    printed_indices = set()  
+
+    print(" - Calculating pitch for each region...")
+    for j in range(num_regions_y_axis):
+        # Filter rows where y < ((j + 1) * 100)
+        y_limited_df = DATAFRAME[DATAFRAME['y'] < ((j + 1) * 100)]
+
+        for i in range(num_regions_x_axis):
+            # Further filter rows where x < ((i + 1) * 100)
+            xy_limited_df = y_limited_df[y_limited_df['x'] < ((i + 1) * 100)]
+            xy_limited_df = xy_limited_df[~xy_limited_df.index.isin(printed_indices)]
+            printed_indices.update(xy_limited_df.index)
+            xy_limited_df.sort_values(by=['y', 'x'], inplace=True)
+
+            # Filter `_m4` nodes within the current x and y limits
+            m4_limited_df = xy_limited_df[xy_limited_df['node'].str.contains('_m4_')]
+
+            # Get the first two `_m4` nodes
+            first_two_rows = m4_limited_df.iloc[:2]
+
+            # Ensure there are at least two `_m4` nodes to calculate the pitch
+            if len(first_two_rows) == 2:
+                node1 = first_two_rows.iloc[0]['node']
+                node2 = first_two_rows.iloc[1]['node']
+
+                # Calculate the Manhattan distance
+                pitch = get_pitch_for_layer(node1, node2)
+
+                # Assign the pitch value to all nodes within the current x and y limits
+                DATAFRAME.loc[xy_limited_df.index, 'pitch'] = pitch
+
+
+
+    print(" - Pitch values calculated for all regions.")
+    
+    if PLOT :
+        plt.figure(figsize=(8, 6))
+        plt.scatter(DATAFRAME['y'], 
+                    DATAFRAME['x'],
+                    c=DATAFRAME['pitch'],
+                    cmap='viridis', s=10)
+                    # cmap='coolwarm', s=5) # Color by current_value
+        plt.colorbar(label='PDN Map')
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.title('Voltage Map')
+        # plt.gca().invert_yaxis()  # Invert y-axis if required
+        plt.show()
+
+    PDN_plot_file = OUTPUT_FILE_WO_EXT + ".pdn"
+    DATAFRAME.to_csv(PDN_plot_file, index=False)
+    print(f"Saved PDN distribution to file : {PDN_plot_file}")
+
+PDN_plot(file_content)
+
+# %%
+
+
+
