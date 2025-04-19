@@ -11,9 +11,35 @@ import time
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import math
 
 # Import Solver script
 import ir_solver as ir_solver
+# import sys
+# log_file = open("LOG.txt", "w")
+# sys.stdout = log_file
+# sys.stderr = log_file
+
+import sys
+
+class Logger:
+    def __init__(self, log_file):
+        self.terminal = sys.stdout
+        self.log = open(log_file, "w")
+
+    def write(self, message):
+        self.terminal.write(message)  # Print to console
+        self.log.write(message)       # Write to file
+
+    def flush(self):
+        pass  # Required for compatibility with sys.stdout
+    
+    def close(self):
+        self.log.close()  # Close the log file
+
+log_file = os.path.join(os.path.dirname(__file__), "FEATURE_EXTRACTION_LOG.log")
+sys.stdout = Logger(log_file)
+
 PLOT = 0
 
 # %%
@@ -193,15 +219,19 @@ INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598
 # INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/training_data/data_point25.sp'
 
 # OUTPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/output.voltage'
-OUTPUT_FILE_WO_EXT = os.path.splitext(os.path.basename(INPUT_FILE))[0]
+# OUTPUT_FILE_WO_EXT = os.path.splitext(os.path.basename(INPUT_FILE))[0]
 
-file_content = parse_lines(INPUT_FILE)
+# FEATURE_DIR = os.path.join(os.path.dirname(__file__), "FEATURE_DIR")
+# OUTPUT_FILE_WO_EXT = os.path.join(FEATURE_DIR, os.path.splitext(os.path.basename(INPUT_FILE))[0])
+# print(OUTPUT_FILE_WO_EXT)
+
+# file_content = parse_lines(INPUT_FILE)
 
 
 # %% 
 
 # Get Current Map features.
-def create_current_map(file_dataframe:pd.DataFrame):
+def create_current_map(file_dataframe:pd.DataFrame, OUTPUT_FILE_WO_EXT ):
     """Create current map from INPUT file.
 
     For every node in the ckt, i.e the first column 
@@ -212,6 +242,13 @@ def create_current_map(file_dataframe:pd.DataFrame):
     Add value of these current sources to location of nodes. 
 
     Save (x,y, current_value) to a new panda dataframe and plot this dataframe. 
+
+    Arguments 
+    ---------
+    file_dataframe: 
+        Dataframe made from the contents of the file.
+    OUTPUT_FILE_WO_EXT:
+        Path to save the output .imap file
     """
 
     print("   -----------------------")
@@ -240,7 +277,7 @@ def create_current_map(file_dataframe:pd.DataFrame):
     nodes_df.to_csv(current_map_file, index=False)
 
     # print(nodes_df.head(10))
-    print(f"Saved current map to file : {current_map_file}")
+    print(f" - Saved current map to file : {os.path.basename(current_map_file)}")
 
     if PLOT: 
         print("Plotting current map...")
@@ -258,18 +295,26 @@ def create_current_map(file_dataframe:pd.DataFrame):
         plt.gca().invert_yaxis()
         plt.show()
 
-create_current_map(file_content)
+
 
 # %% 
-
 # Get effective distance to voltage sources.
 def distance_to_voltage_source(
-        file_dataframe : pd.DataFrame
+        file_dataframe : pd.DataFrame,
+        OUTPUT_FILE_WO_EXT:str
 ):
     
-    """Calculate distance to Voltage source
+    """Calculates effective distance to voltage sources
+
+    For each entry :
+    1/d_eff = 1/d1 + 1/d2 + ... 1/d_n
     
-    Takes the average of MANHATTAN distance to all voltage sources. 
+    Arguments 
+    ---------
+    file_dataframe: 
+        Dataframe made from the contents of the file.
+    OUTPUT_FILE_WO_EXT:
+        Path to save the output .vmap file
     """
     print("   -----------------------")
     print(" - Creating effective distance to voltage source map...")
@@ -297,7 +342,7 @@ def distance_to_voltage_source(
     file_dataframe = file_dataframe.drop(columns=['electrical_component', 'node1'])
 
     file_dataframe.to_csv(effective_voltage_map_file, index=False)
-    print(f"Saved effective distance to voltage source map to file : {effective_voltage_map_file}")
+    print(f" - Saved effective distance to voltage source map to file : {os.path.basename(effective_voltage_map_file)}")
 
     if PLOT: 
         print("Plotting voltage map...")
@@ -315,24 +360,32 @@ def distance_to_voltage_source(
         plt.gca().invert_yaxis()
         plt.show()
 
-distance_to_voltage_source(file_content)
+
 
 # %%
 
 # Get .voltage file  using ir_solver module.
 
-# OUTPUT_FILE = OUTPUT_FILE_WO_EXT + ".voltage"
 def IR_drop_map(
         INPUT_FILE:str,
+        OUTPUT_FILE_WO_EXT:str
         # OUTPUT_FILE:str
 ):
-    """Run IR drop solver to get voltage map."""
+    """Run IR drop solver to get voltage map.
+    
+    Arguments 
+    ---------
+    INPUT_FILE: 
+        Path to input .sp file.
+    OUTPUT_FILE_WO_EXT:
+        Path to save the generated output .irdop file
+    """
 
     print("   -----------------------")
     print(" - Running IR drop solver...")
     
     OUTPUT_FILE = OUTPUT_FILE_WO_EXT + ".voltage"
-    
+
     ir_solver.run_solver( INPUT_FILE, OUTPUT_FILE )
 
     dot_voltage_df = parse_voltage_file(OUTPUT_FILE)
@@ -341,7 +394,7 @@ def IR_drop_map(
 
     DOT_OUT_FILE = OUTPUT_FILE_WO_EXT + ".irdrop"
     dot_voltage_df.to_csv(DOT_OUT_FILE, index=False)
-    print(f"Saved IR Drop distribution to file : {DOT_OUT_FILE}")
+    print(f" - Saved IR Drop distribution to file : {os.path.basename(DOT_OUT_FILE)}")
 
     if PLOT : 
         plt.figure(figsize=(8, 6))
@@ -358,16 +411,21 @@ def IR_drop_map(
         plt.gca().invert_yaxis()  # Invert y-axis if required
         plt.show()
 
-IR_drop_map(INPUT_FILE)
+
 
 # %% 
-
-
 # Create PDN plot 
-import math
+def PDN_plot(DATAFRAME:pd.DataFrame, OUTPUT_FILE_WO_EXT:str):
+    """Create PDN distribution from .sp file
+    
+    Arguments 
+    ---------
+    DATAFRAME: 
+        Dataframe made from the contents of the file.
+    OUTPUT_FILE_WO_EXT:
+        Path to save the output .imap file
 
-def PDN_plot(DATAFRAME:pd.DataFrame):
-    """Create PDN distribution from .sp file"""
+    """
 
     print("   -----------------------")
     print(" - Creating PDN distribution plot...")
@@ -450,11 +508,97 @@ def PDN_plot(DATAFRAME:pd.DataFrame):
 
     PDN_plot_file = OUTPUT_FILE_WO_EXT + ".pdn"
     DATAFRAME.to_csv(PDN_plot_file, index=False)
-    print(f"Saved PDN distribution to file : {PDN_plot_file}")
+    print(f" - Saved PDN distribution to file : {os.path.basename(PDN_plot_file)}")
 
-PDN_plot(file_content)
 
 # %%
 
+def generate_features(
+        INPUT_FILE:str
+):
+    """Generates the following four features per file for model training
+    
+    1. Current map (.imap file)
+    2. Effective distance to voltage source (.vmap file)
+    3. PDN distribution (.pdn file)
+    4. IR drop (.irdrop file)
+
+    Arguments
+    ---------
+    INPUT_FILE : 
+        Path to input file. 
+
+    Returns 
+    -------
+    None
+        No values returned, but above four feature files are 
+        created per data point for model training
+    """
+
+    # Creating output directory :
+    FEATURE_DIR = os.path.join(os.path.dirname(__file__), "FEATURE_DIR")
+    if not os.path.exists(FEATURE_DIR):
+        os.makedirs(FEATURE_DIR)
+    
+    OUTPUT_FILE_WO_EXT = os.path.join(FEATURE_DIR, os.path.splitext(os.path.basename(INPUT_FILE))[0])
+
+    FILE_DATAFRAME = parse_lines(INPUT_FILE)
+
+    create_current_map(FILE_DATAFRAME, OUTPUT_FILE_WO_EXT)
+    distance_to_voltage_source(FILE_DATAFRAME, OUTPUT_FILE_WO_EXT)
+    IR_drop_map(INPUT_FILE, OUTPUT_FILE_WO_EXT)
+    PDN_plot(FILE_DATAFRAME,OUTPUT_FILE_WO_EXT)
+
+    print(f"\nGenerated features for {os.path.basename(INPUT_FILE)}")
 
 
+generate_features(INPUT_FILE)
+
+# %%
+
+# # For logging print statements to log file
+# import sys
+# log_file = os.path.join(os.path.dirname(__file__), "feature_extraction.log")
+# sys.stdout = open(log_file, "w")
+# # To stop logging 
+# sys.stdout.close()
+# sys.stdout = original_stdout
+
+def generate_training_dataset(DATASET_FOLDER):
+    """
+        Processes all files in the given folder and generates features for each file.
+
+        Arguments
+        ---------
+        DATASET_FOLDER : str
+            Path to the folder containing the dataset files.
+
+        Returns
+        -------
+        None
+            Features are generated and saved for each file in the folder.
+    """
+
+    print(f"Processing dataset folder: {os.path.basename(DATASET_FOLDER)}")
+    for file_name in os.listdir(DATASET_FOLDER):
+        file_path = os.path.join(DATASET_FOLDER, file_name)
+
+        generate_features(file_path)  # Call the generate_features() function for each file
+        # Check if the current item is a file
+        # if os.path.isfile(file_path):
+    print("-----------------------------------------------------------------")
+    print("Feature generation completed for all files in the dataset folder.")
+
+SMOL_DATA = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/smol_train_data'
+start_time = time.time()
+generate_training_dataset(SMOL_DATA)
+end_time = time.time()
+
+print(f"Time to run : {(end_time - start_time):.6f} seconds")
+
+sys.stdout.close()
+sys.stdout = sys.__stdout__
+
+
+
+# %%
