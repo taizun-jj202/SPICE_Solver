@@ -187,7 +187,7 @@ def run_solver(
         solved_voltage_vector=V
     )
     # print(f'\nGenerated output file: {os.path.basename(OUTPUT_FILE)}\n')
-    print(f' - Generated output file: {os.path.basename(OUTPUT_FILE)}\n')
+    print(f' - Generated output file: {os.path.basename(OUTPUT_FILE)}')
 
 
 
