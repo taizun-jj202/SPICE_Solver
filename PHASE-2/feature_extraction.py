@@ -231,7 +231,7 @@ INPUT_FILE = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598
 # %% 
 
 # Get Current Map features.
-def create_current_map(file_dataframe:pd.DataFrame, OUTPUT_FILE_WO_EXT ):
+def create_current_map(file_dataframe:pd.DataFrame, FEATURE_ADDED_DATAFRAME:pd.DataFrame):
     """Create current map from INPUT file.
 
     For every node in the ckt, i.e the first column 
@@ -247,8 +247,13 @@ def create_current_map(file_dataframe:pd.DataFrame, OUTPUT_FILE_WO_EXT ):
     ---------
     file_dataframe: 
         Dataframe made from the contents of the file.
-    OUTPUT_FILE_WO_EXT:
-        Path to save the output .imap file
+    FEATURE_ADDED_DATAFRAME:
+        Dataframe that contains PND column.
+
+    Returns 
+    -------
+    DataFrame: pd.DataFrame
+        Dataframe with added column for Current Map Distribution.
     """
 
     print("   -----------------------")
@@ -272,12 +277,14 @@ def create_current_map(file_dataframe:pd.DataFrame, OUTPUT_FILE_WO_EXT ):
     # print(nodes_df.head(10))
     nodes_df['Current'] = pd.to_numeric(nodes_df['Current'], errors='coerce')
     nodes_df = nodes_df.drop(columns=['node'])[['x', 'y', 'Current']]
-    
-    current_map_file = OUTPUT_FILE_WO_EXT + ".imap"
-    nodes_df.to_csv(current_map_file, index=False)
 
+    # Add `CURRENT` column to dataframe with PDN data.
+    nodes_df = nodes_df[['x', 'y', 'Current']]  # Keep only relevant columns in nodes_df
+    FEATURE_ADDED_DATAFRAME = FEATURE_ADDED_DATAFRAME.merge(nodes_df, on=['x', 'y'], how='left')
+    FEATURE_ADDED_DATAFRAME['Current'] = FEATURE_ADDED_DATAFRAME['Current'].fillna(0)
+    print(f" - Added Current map information to dataframe")
     # print(nodes_df.head(10))
-    print(f" - Saved current map to file : {os.path.basename(current_map_file)}")
+    
 
     if PLOT: 
         print("Plotting current map...")
@@ -294,6 +301,12 @@ def create_current_map(file_dataframe:pd.DataFrame, OUTPUT_FILE_WO_EXT ):
         # plt.grid(True)
         plt.gca().invert_yaxis()
         plt.show()
+    
+    # current_map_file = OUTPUT_FILE_WO_EXT + ".imap"
+    # nodes_df.to_csv(current_map_file, index=False)
+    # print(f" - Saved current map to file : {os.path.basename(current_map_file)}")
+
+    return FEATURE_ADDED_DATAFRAME
 
 
 
@@ -301,7 +314,7 @@ def create_current_map(file_dataframe:pd.DataFrame, OUTPUT_FILE_WO_EXT ):
 # Get effective distance to voltage sources.
 def distance_to_voltage_source(
         file_dataframe : pd.DataFrame,
-        OUTPUT_FILE_WO_EXT:str
+        FEATURE_ADDED_DATAFRAME:pd.DataFrame
 ):
     
     """Calculates effective distance to voltage sources
@@ -313,8 +326,13 @@ def distance_to_voltage_source(
     ---------
     file_dataframe: 
         Dataframe made from the contents of the file.
-    OUTPUT_FILE_WO_EXT:
-        Path to save the output .vmap file
+    FEATURE_ADDED_DATAFRAME:
+        Dataframe that has PDN and current distribution data.
+
+    Returns 
+    -------
+    Dataframe : pd.DataFrame
+        Dataframe containing PDN, Current-Map, Eff_dist to Volt source distr.
     """
     print("   -----------------------")
     print(" - Creating effective distance to voltage source map...")
@@ -333,23 +351,26 @@ def distance_to_voltage_source(
     file_dataframe['y'] = node_parts[3].astype(float) / 2000
 
     # Compute average Manhattan distance to all voltage sources
-    file_dataframe['Dist_to_Voltage'] = file_dataframe['node1'].apply(
+    file_dataframe['Eff_dist_to_V'] = file_dataframe['node1'].apply(
         lambda node: 0 if node in voltage_sources['node'].values else calc_avg_dist(voltage_sources, node)
     )
 
-    effective_voltage_map_file = OUTPUT_FILE_WO_EXT + ".vmap"
-    # Dropping the `electrical_component`,`node1` columns.
-    file_dataframe = file_dataframe.drop(columns=['electrical_component', 'node1'])
+    FEATURE_ADDED_DATAFRAME = FEATURE_ADDED_DATAFRAME.merge(file_dataframe, on=['x', 'y'], how='left')
+    FEATURE_ADDED_DATAFRAME['Eff_dist_to_V'] = FEATURE_ADDED_DATAFRAME['Eff_dist_to_V'].fillna(0)
+    FEATURE_ADDED_DATAFRAME = FEATURE_ADDED_DATAFRAME.drop(columns=['node1', 'electrical_component'])
+    print(f" - Added Eff dist. to V_ss map information to dataframe")
 
-    file_dataframe.to_csv(effective_voltage_map_file, index=False)
-    print(f" - Saved effective distance to voltage source map to file : {os.path.basename(effective_voltage_map_file)}")
+    # effective_voltage_map_file = OUTPUT_FILE_WO_EXT + ".vmap"
+    # file_dataframe = file_dataframe.drop(columns=['electrical_component', 'node1'])
+    # file_dataframe.to_csv(effective_voltage_map_file, index=False)
+    # print(f" - Saved effective distance to voltage source map to file : {os.path.basename(effective_voltage_map_file)}")
 
     if PLOT: 
         print("Plotting voltage map...")
         plt.figure(figsize=(8, 6))
         plt.scatter(file_dataframe['y'],  
                     file_dataframe['x'], 
-                    c=file_dataframe['Dist_to_Voltage'], 
+                    c=file_dataframe['Eff_dist_to_V'], 
                     # cmap='coolwarm', s=5) # Color by current_value
                     cmap='viridis', s=5) # Color by current_value
         plt.colorbar(label='Voltage Value')
@@ -360,6 +381,8 @@ def distance_to_voltage_source(
         plt.gca().invert_yaxis()
         plt.show()
 
+    return FEATURE_ADDED_DATAFRAME
+
 
 
 # %%
@@ -367,47 +390,44 @@ def distance_to_voltage_source(
 # Get .voltage file  using ir_solver module.
 
 def IR_drop_map(
-        INPUT_FILE:str,
-        OUTPUT_FILE_WO_EXT:str
-        # OUTPUT_FILE:str
+        INPUT_FILE: str,
+        OUTPUT_FILE_WO_EXT: str,
+        FEATURE_ADDED_DATAFRAME: pd.DataFrame
 ):
-    """Run IR drop solver to get voltage map.
-    
-    Arguments 
-    ---------
-    INPUT_FILE: 
-        Path to input .sp file.
-    OUTPUT_FILE_WO_EXT:
-        Path to save the generated output .irdop file
-    """
-
+    """Run IR drop solver to get voltage map."""
     print("   -----------------------")
     print(" - Running IR drop solver...")
-    
+
     OUTPUT_FILE = OUTPUT_FILE_WO_EXT + ".voltage"
 
-    ir_solver.run_solver( INPUT_FILE, OUTPUT_FILE )
+    ir_solver.run_solver(INPUT_FILE, OUTPUT_FILE)
 
     dot_voltage_df = parse_voltage_file(OUTPUT_FILE)
     dot_voltage_df['voltage'] = pd.to_numeric(dot_voltage_df['voltage'], errors='coerce')
-    # print(dot_voltage_df.head(10))  
+    dot_voltage_df.rename(columns={'voltage': 'IR_Drop'}, inplace=True)
 
-    DOT_OUT_FILE = OUTPUT_FILE_WO_EXT + ".irdrop"
-    dot_voltage_df.to_csv(DOT_OUT_FILE, index=False)
-    print(f" - Saved IR Drop distribution to file : {os.path.basename(DOT_OUT_FILE)}")
+    # DOT_OUT_FILE = OUTPUT_FILE_WO_EXT + ".irdrop"
+    # dot_voltage_df.to_csv(DOT_OUT_FILE, index=False)
+    # print(f" - Saved IR Drop distribution to file : {os.path.basename(DOT_OUT_FILE)}")
 
-    if PLOT : 
+    DOT_DIST_OUT = OUTPUT_FILE_WO_EXT + ".distribution"
+    FEATURE_ADDED_DATAFRAME = FEATURE_ADDED_DATAFRAME.merge(dot_voltage_df, on=['x', 'y'], how='left')
+
+    # Update to use the renamed column 'IR_Drop'
+    FEATURE_ADDED_DATAFRAME['IR_Drop'] = FEATURE_ADDED_DATAFRAME['IR_Drop'].fillna(0)
+    FEATURE_ADDED_DATAFRAME.to_csv(DOT_DIST_OUT, index=False)
+    print(f"Saved all features to : {os.path.basename(DOT_DIST_OUT)}")
+
+    if PLOT:
         plt.figure(figsize=(8, 6))
-        plt.scatter(dot_voltage_df['y'], 
-                    dot_voltage_df['x'], 
-                    c=dot_voltage_df['voltage'], 
+        plt.scatter(dot_voltage_df['y'],
+                    dot_voltage_df['x'],
+                    c=dot_voltage_df['IR_Drop'],
                     cmap='viridis', s=5)
-                    # cmap='coolwarm', s=5) # Color by current_value
-        plt.colorbar(label='Voltage Value')
+        plt.colorbar(label='IR Drop Value')
         plt.xlabel('X Coordinate')
         plt.ylabel('Y Coordinate')
-        plt.title('Voltage Map')
-        # plt.grid(True)
+        plt.title('IR Drop Map')
         plt.gca().invert_yaxis()  # Invert y-axis if required
         plt.show()
 
@@ -415,15 +435,18 @@ def IR_drop_map(
 
 # %% 
 # Create PDN plot 
-def PDN_plot(DATAFRAME:pd.DataFrame, OUTPUT_FILE_WO_EXT:str):
+def PDN_plot(DATAFRAME:pd.DataFrame):
     """Create PDN distribution from .sp file
     
     Arguments 
     ---------
     DATAFRAME: 
         Dataframe made from the contents of the file.
-    OUTPUT_FILE_WO_EXT:
-        Path to save the output .imap file
+    
+    Returns
+    -------
+    DATAFRAME:pd.DataFrame
+        Dataframe with PDN distribution data
 
     """
 
@@ -456,7 +479,7 @@ def PDN_plot(DATAFRAME:pd.DataFrame, OUTPUT_FILE_WO_EXT:str):
     # print(f"  Num x regs: {num_regions_x_axis}, Num y regs : {num_regions_y_axis}")
 
 
-    DATAFRAME['pitch'] = np.nan
+    DATAFRAME['PDN_Pitch'] = np.nan
     printed_indices = set()  
 
     print(" - Calculating pitch for each region...")
@@ -486,7 +509,7 @@ def PDN_plot(DATAFRAME:pd.DataFrame, OUTPUT_FILE_WO_EXT:str):
                 pitch = get_pitch_for_layer(node1, node2)
 
                 # Assign the pitch value to all nodes within the current x and y limits
-                DATAFRAME.loc[xy_limited_df.index, 'pitch'] = pitch
+                DATAFRAME.loc[xy_limited_df.index, 'PDN_Pitch'] = pitch
 
 
 
@@ -496,7 +519,7 @@ def PDN_plot(DATAFRAME:pd.DataFrame, OUTPUT_FILE_WO_EXT:str):
         plt.figure(figsize=(8, 6))
         plt.scatter(DATAFRAME['y'], 
                     DATAFRAME['x'],
-                    c=DATAFRAME['pitch'],
+                    c=DATAFRAME['PDN_Pitch'],
                     cmap='viridis', s=10)
                     # cmap='coolwarm', s=5) # Color by current_value
         plt.colorbar(label='PDN Map')
@@ -506,9 +529,11 @@ def PDN_plot(DATAFRAME:pd.DataFrame, OUTPUT_FILE_WO_EXT:str):
         # plt.gca().invert_yaxis()  # Invert y-axis if required
         plt.show()
 
-    PDN_plot_file = OUTPUT_FILE_WO_EXT + ".pdn"
-    DATAFRAME.to_csv(PDN_plot_file, index=False)
-    print(f" - Saved PDN distribution to file : {os.path.basename(PDN_plot_file)}")
+    # PDN_plot_file = OUTPUT_FILE_WO_EXT + ".pdn"
+    # DATAFRAME.to_csv(PDN_plot_file, index=False)
+    # print(f" - Saved PDN distribution to file : {os.path.basename(PDN_plot_file)}")
+
+    return DATAFRAME
 
 
 # %%
@@ -542,17 +567,22 @@ def generate_features(
     
     OUTPUT_FILE_WO_EXT = os.path.join(FEATURE_DIR, os.path.splitext(os.path.basename(INPUT_FILE))[0])
 
-    FILE_DATAFRAME = parse_lines(INPUT_FILE)
+    File_DataFrame = parse_lines(INPUT_FILE)
 
-    create_current_map(FILE_DATAFRAME, OUTPUT_FILE_WO_EXT)
-    distance_to_voltage_source(FILE_DATAFRAME, OUTPUT_FILE_WO_EXT)
-    IR_drop_map(INPUT_FILE, OUTPUT_FILE_WO_EXT)
-    PDN_plot(FILE_DATAFRAME,OUTPUT_FILE_WO_EXT)
+    # create_current_map(File_DataFrame, OUTPUT_FILE_WO_EXT)
+    # distance_to_voltage_source(File_DataFrame, OUTPUT_FILE_WO_EXT)
+    # IR_drop_map(INPUT_FILE, OUTPUT_FILE_WO_EXT)
+    # PDN_plot(File_DataFrame,OUTPUT_FILE_WO_EXT)
 
-    print(f"\nGenerated features for {os.path.basename(INPUT_FILE)}")
+    dataframe = PDN_plot(File_DataFrame)
+    dataframe = create_current_map(File_DataFrame, dataframe)
+    dataframe = distance_to_voltage_source(File_DataFrame, dataframe)
+    IR_drop_map(INPUT_FILE, OUTPUT_FILE_WO_EXT, dataframe)
 
 
-generate_features(INPUT_FILE)
+    print(f"Generated features for {os.path.basename(INPUT_FILE)}")
+
+
 
 # %%
 
@@ -588,6 +618,10 @@ def generate_training_dataset(DATASET_FOLDER):
         # if os.path.isfile(file_path):
     print("-----------------------------------------------------------------")
     print("Feature generation completed for all files in the dataset folder.")
+
+
+
+# %%
 
 SMOL_DATA = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/smol_train_data'
 start_time = time.time()
