@@ -623,9 +623,11 @@ def generate_training_dataset(DATASET_FOLDER):
 
 # %%
 
-SMOL_DATA = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/smol_train_data'
+# SMOL_DATA = '/Users/taizunj/Documents/Masters_2024/ASU/Student_Docs/SEM2/EEE598_VLSI_Design_Automation/Mini_Project-2/PHASE-2/smol_train_data'
+DATASET = 'PHASE-2/training_data'
+
 start_time = time.time()
-generate_training_dataset(SMOL_DATA)
+generate_training_dataset(DATASET)
 end_time = time.time()
 
 print(f"Time to run : {(end_time - start_time):.6f} seconds")
