@@ -10,9 +10,16 @@ Phase1 Description.pdf
 *.irdrop
 *.pdn
 *.voltage
+*.log
+
+# Ignore generated features directory
+FEATURE_DIR  
+# Ignore Small test datasets:
+PHASE-2/smol_train_data/
 
 #Ignore VS Code files
 .DS_Store
+__pycache__
 
 #Python Venv
 EEE598/
